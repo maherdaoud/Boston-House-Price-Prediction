@@ -1,0 +1,655 @@
+---
+title: "Boston House Price Prediction"
+author: "Maher Daoud"
+date: "2/6/2022"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+### Load Required Libraries ###
+# Function to check if packages are installed 
+isInstalled <- function(mypkg){
+    is.element(mypkg, installed.packages()[,1])
+}
+
+if(!isInstalled("pastecs")) install.packages("pastecs",repos = "http://cran.us.r-project.org")
+if(!isInstalled("readr")) install.packages("readr",repos = "http://cran.us.r-project.org")
+if(!isInstalled("dplyr")) install.packages("dplyr",repos = "http://cran.us.r-project.org")
+if(!isInstalled("tidyr")) install.packages("readr",repos = "http://cran.us.r-project.org")
+if(!isInstalled("ggplot2")) install.packages("dplyr",repos = "http://cran.us.r-project.org")
+if(!isInstalled("corrplot")) install.packages("corrplot",repos = "http://cran.us.r-project.org")
+if(!isInstalled("caret")) install.packages("caret",repos = "http://cran.us.r-project.org")
+if(!isInstalled("usdm")) install.packages("usdm",repos = "http://cran.us.r-project.org")
+if(!isInstalled("rpart")) install.packages("rpart",repos = "http://cran.us.r-project.org")
+if(!isInstalled("rpart.plot")) install.packages("rpart.plot",repos = "http://cran.us.r-project.org")
+if(!isInstalled("randomForest")) install.packages("randomForest",repos = "http://cran.us.r-project.org")
+library(pastecs)
+library (readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(corrplot)
+library(caret)
+library(usdm)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+knitr::opts_chunk$set(
+                 fig.align='center',
+                 external=TRUE,
+                 echo=TRUE,
+                 warning=FALSE,
+                 message = FALSE,
+                 fig.pos='H'
+                )
+
+```
+
+## Overview
+
+The problem on hand is to predict the housing prices of a town or a suburb based on the features of the locality provided to us. In the process, we need to identify the most important features in the dataset. We need to employ techniques of data preprocessing and build a linear regression model that predicts the prices for us. 
+
+
+### Data Information
+
+Each record in the database describes a Boston suburb or town. The data was drawn from the Boston Standard Metropolitan Statistical Area (SMSA) in 1970. Detailed attribute information can be found below-
+
+Attribute Information (in order):
+
+- **CRIM:**     per capita crime rate by town
+- **ZN:**       proportion of residential land zoned for lots over 25,000 sq.ft.
+- **INDUS:**    proportion of non-retail business acres per town
+- **CHAS:**     Charles River dummy variable (= 1 if tract bounds river; 0 otherwise)
+- **NOX:**      nitric oxides concentration (parts per 10 million)
+- **RM:**       average number of rooms per dwelling
+- **AGE:**     proportion of owner-occupied units built prior to 1940
+- **DIS:**      weighted distances to five Boston employment centres
+- **RAD:**      index of accessibility to radial highways
+- **TAX:**      full-value property-tax rate per 10,000 dollars
+- **PTRATIO:**  pupil-teacher ratio by town
+- **LSTAT:**    %lower status of the population
+- **MEDV:**     Median value of owner-occupied homes in 1000 dollars.
+
+\newpage
+
+### Import the Data
+
+```{r import_data, include=TRUE}
+# In case you face any problem with downloading the dataset
+# please use this link to download the dataset
+# https://github.com/maherdaoud/Boston-House-Price-Prediction/blob/main/Boston.csv
+# then use the following code to read it
+# df <- read.csv("C:\download-path\Boston.csv)
+
+# Import the data from Github
+urlfile <-
+  "https://raw.githubusercontent.com/maherdaoud/Boston-House-Price-Prediction/main/Boston.csv"
+df <- data.frame(read_csv(url(urlfile), show_col_types = F), stringsAsFactors = F)
+
+```
+
+**Row Data of Boston House Price**
+
+```{r df_print_table, echo=FALSE}
+knitr::kable(df[1:10,], align = "c") %>%
+  kableExtra::kable_minimal(full_width = T, position = "center")
+```
+
+ \
+
+**Observations:**
+
+* The price of the house indicated by the variable MEDV is the target variable and the rest are the independent variables based on which we will predict house price.
+
+
+### Get information about the dataset using the str() method
+```{r information_about_df, include=TRUE}
+# Print the Structure of the dataset
+str(df)
+```
+
+```{r NA_count_df, include=TRUE}
+# compute how many NA we have
+colSums(is.na(df))
+```
+
+
+**Observations:**
+
+* There are a total of 506 non-null observations in each of the columns. This indicates that there are no missing values in the data.
+* Every column in this dataset is numeric in nature.
+
+\newpage
+
+## Analysis
+
+### Let's now check the summary statistics of this dataset
+```{r summary_statistics, include=TRUE}
+# use stat.desc function to find summary statistics 
+# for all numeric columns in the data set
+round(pastecs::stat.desc(df, norm = F),3)
+```
+
+**Observations:**
+
+* The **50th percentile of ZN** (proportion of residential land zoned for lots over 25,000 sq.ft.) **is 0**. This indicates that at least half the residential plots are under 25,000 sq. ft in area.
+* The **75th percentile of CHAS** (Charles River dummy variable) **is 0**. It indicates that the vast majority of these houses are away from the Charles river.
+* The **mean house price** is approx. **USD 22,500**, whereas **the median of the house prices** is approx. **USD 21,200**. This indicates that the price distribution is only slightly skewed towards the right side.
+
+\newpage
+
+Before performing the modeling, it is important to check the univariate distribution of the variables.
+
+### Univariate Analysis
+
+```{r univariate_analysis, include=TRUE, fig.width=6, fig.height=6}
+# Gather all variables in two columns, one for the variable name and one for value using
+# gather function
+# Plot the distribution fro each variable using geom_histogram
+gather(df, cols, value) %>%
+  ggplot(aes(x=value)) +  
+  geom_histogram(aes(y = ..density..), colour = 1, fill = "white") +
+  geom_density() + 
+  facet_wrap(.~cols, scales = "free", nrow = 5) +
+  theme_bw()
+```
+
+**Observations:**
+
+* **The variables CRIM and ZN are positively skewed.** This suggests that most of the areas have lower crime rates and most residential plots are under the area of 25,000 sq. ft.
+* **The variable CHAS, with only 2 possible values 0 and 1, follows a binomial distribution**, and the majority of the houses are away from Charles river (CHAS = 0).
+* The distribution of the variable AGE suggests that many of the owner-occupied houses were built before 1940. 
+* **The variable DIS** (average distances to five Boston employment centers) **has a nearly exponential distribution**, which indicates that most of the houses are closer to these employment centers.
+* **The variables TAX and RAD have a bimodal distribution.**, indicating that the tax rate is possibly higher for some properties which have a high index of accessibility to radial highways.  
+* The dependent variable MEDV seems to be slightly right skewed.
+
+As the dependent variable is sightly skewed, we will apply a **log transformation on the 'MEDV' column** and check the distribution of the transformed column.
+
+```{r MEDV_log, include=TRUE, fig.width=6, fig.height=3}
+# Calculate the log of MEDV
+df$MEDV_log <- log(df$MEDV)
+# Plot the distribution
+ggplot(df, aes(x=MEDV_log)) +  
+  geom_histogram(aes(y = ..density..), colour = 1, fill = "white") +
+  geom_density() +
+  theme_bw()
+```
+
+**Observations:**
+
+- The log-transformed variable (**MEDV_log**) appears to have a **approx. normal distribution and with less skew**, and hence we can proceed.
+
+\newpage
+
+Before creating the linear regression model, it is important to check the bivariate relationship between the variables. Let's check the same using the heatmap and scatterplot.
+
+### Bivariate Analysis
+
+#### Let's check the correlation using the heatmap 
+
+```{r correlation_heatmap, echo=F, fig.width=8, fig.height=8}
+## get Correlation between all variables
+M = cor(df)
+## get p-value matrix and confidence intervals matrix 
+testRes = cor.mtest(df, conf.level = 0.95)
+## leave blank on non-significant coefficient
+## add all correlation coefficients
+corrplot(M, p.mat = testRes$p, method = 'circle', type = 'lower', insig='blank',
+         addCoef.col ='black', number.cex = 0.8, order = 'AOE', diag=FALSE)
+```
+
+**Observations:**
+
+* **Significant correlations** are present between **NOX and INDUS** (0.76) - likely because areas with a higher proportion of non-retail industries are likely contributing to Nitric Oxide air pollution
+* The variable **DIS has a strong negative correlation with INDUS (-0.71), NOX (-0.77) and AGE (-0.75)**, which are all significantly positively correlated with each other as well. An explanation for this could be that areas closer to the center of the Boston city/metropolitan area, contain the oldest buildings and factories of importance, and their distance from the five employment centers in the heart of the city is also consequently small.
+* Features **RAD and TAX are very strongly correlated (0.91)**.
+* **INDUS and TAX** are also significantly correlated (0.70).
+* **RM shows a significant positive correlation with MEDV**, likely since the higher the number of rooms per dwelling the more expensive the house, while **LSTAT shows a strong negative linear relationship with MEDV**, showing the likelihood of houses in areas with a higher percentage of lower-status population (poor education, laborers and unskilled employment) to be less expensive.
+
+### Linear Model Building - Approach
+
+1. Data preparation
+2. Partition the data into train and test set
+3. Build model on the train data
+4. Cross-validating the model
+5. Test the data on test set
+
+#### Split the dataset
+Let's split the data into the dependent and independent variables and further split it into train and test set in a ratio of 70:30 for train and test set.
+
+```{r split_data, include=TRUE}
+# set seed to fix number where be able to have same random set everytime
+set.seed(100)
+# split using createDataPartition function where train data has 70% of the data
+# and test data has 30% of the data
+trainIndex <- createDataPartition(df$MEDV_log, p = .7,
+                                  list = FALSE,
+                                  times = 1)
+
+# Drop MEDV and we will use the log tranformation 
+df$MEDV <- NULL
+
+# Create training and testing dataset
+train <- df[trainIndex,] 
+test <- df[-trainIndex,]
+```
+
+Next, we will check the multicollinearity in the train dataset.
+
+#### Check for Multicollinearity
+
+* **Multicollinearity** occurs when predictor variables in a regression model are correlated. This correlation is a problem because predictor variables should be independent.  If the correlation between variables is high, it can cause problems when we fit the model and interpret the results. When we have multicollinearity in the linear model, the coefficients that the model suggests are unreliable.
+* There are different ways of detecting (or testing) multi-collinearity, one such way is Variation Inflation Factor.
+* **Variance  Inflation  factor**:  Variance  inflation  factors  measures  the  inflation  in  the variances of the regression parameter estimates due to collinearity that exist among the  predictors.  It  is  a  measure  of  how  much  the  variance  of  the  estimated  regression coefficient Bk is "inflated" by  the  existence  of  correlation  among  the  predictor variables in the model. 
+* General Rule of thumb: If VIF is 1 then there is no correlation among the kth predictor and the remaining predictor variables, and  hence  the variance of B^k is not inflated at all. Whereas if **VIF exceeds 5 or is close to exceeding 5, we say there is moderate VIF and if it is 10 or exceeding 10, it shows signs of high multi-collinearity.**
+
+```{r compute_multicollinearity, echo=T}
+## use vif function to compute Variance Inflation Factor and test for multicollinearity
+check_vif_df <- train
+check_vif_df$MEDV_log <- NULL
+knitr::kable(usdm::vif(check_vif_df), align = "c") %>%
+  kableExtra::kable_minimal(full_width = T, position = "center")
+```
+
+* There are two variables with a high VIF - RAD and TAX. Let's remove TAX as it has the highest VIF values and check the multicollinearity again.
+
+#### Dropping the column 'TAX' from the training data and checking if multicollinearity is removed
+
+```{r drop_tac_variable, echo=F}
+## drop Tax column
+check_vif_df$TAX <- NULL
+## use vif function to compute Variance Inflation Factor and test for multicollinearity
+knitr::kable(usdm::vif(check_vif_df), align = "c") %>%
+  kableExtra::kable_minimal(full_width = T, position = "center")
+```
+
+Now, we will create the linear regression model as the VIF is less than 5 for all the independent variables, and we can assume that multicollinearity has been removed between the variables.
+
+#### Creating linear regression model using lm function
+
+```{r linear_regression_model, echo=T}
+# Remove Tax 
+train$TAX <- NULL
+# create the model
+model1 <- lm(MEDV_log ~ ., data = train)
+# print summary of the model
+summary(model1)
+```
+
+**Interpreting the Regression Results:**
+
+1. **Adjusted. R-squared**: It reflects the fit of the model.
+    - R-squared values range from 0 to 1, where a higher value generally indicates a better fit, assuming certain conditions are met.
+    - In our case, the value for Adj. R-squared is **0.76**
+2. **coeff**: It represents the change in the output Y due to a change of one unit in the variable (everything else held constant).
+3. **std err**: It reflects the level of accuracy of the coefficients.
+    - The lower it is, the more accurate the coefficients are.
+4. **P >|t|**: It is p-value.
+   * Pr(>|t|) : For each independent feature there is a null hypothesis and alternate hypothesis 
+    Ho : Independent feature is not significant 
+    Ha : Independent feature is significant 
+   * A p-value of less than 0.05 is considered to be statistically significant.
+5. **Confidence Interval**: It represents the range in which our coefficients are likely to fall (with a likelihood of 95%).
+* Both the **R-squared and Adjusted R-squared of the model are around 76%**. This is a clear indication that we have been able to create a good model that is able to explain variance in the house prices for up to 76%.
+* we can examine the significance of the regression model, try dropping insignificant variables.
+
+#### Dropping the insignificant variables from the above model and creating the regression model again.
+
+#### Examining the significance of the model
+  
+ \
+ 
+It is not enough to fit a multiple regression model to the data, it is necessary to check whether all the regression coefficients are significant or not. Significance here means whether the population regression parameters are significantly different from zero. 
+
+From the above it may be noted that the regression coefficients corresponding to ZN, AGE, and INDUS are not statistically significant at level = 0.05. In other words, the regression coefficients corresponding to these three are not significantly different from 0 in the population. Hence, we will eliminate the three features and create a new model.
+
+```{r linear_regression_model_after_drop_insignificant, echo=T}
+# set seed to fix number where be able to have same random set everytime
+set.seed(100)
+# split using createDataPartition function where train data has 70% of the data
+# and test data has 30% of the data
+trainIndex <- createDataPartition(df$MEDV_log, p = .7,
+                                  list = FALSE,
+                                  times = 1)
+df_significant <- df
+# Drop 'TAX', 'ZN', 'AGE', 'INDUS'
+df_significant$TAX <- NULL
+df_significant$ZN <- NULL
+df_significant$AGE <- NULL
+df_significant$INDUS <- NULL
+
+# Create training and testing dataset
+train <- df_significant[trainIndex,] 
+test <- df_significant[-trainIndex,]
+
+# create the model
+model2 <- lm(MEDV_log ~ ., data = train)
+
+# print summary of the model
+summary(model2)
+```
+
+**Observations:**
+
+* We can see that the **R-squared value** and **adjusted R-squared** has not been changed that as what we expect.
+Now, we will check the linear regression assumptions.
+
+#### Checking the performance of the model on the train and test data set
+
+```{r define_evaluation_functions, echo=FALSE, include=FALSE}
+
+# Compute Root Mean Squared Error
+rmse <- function(predictions, targets){
+    return(sqrt(mean((targets - predictions) ^ 2)))
+}
+
+# Compute Mean Absolute Percentage Error
+mape <- function(predictions, targets){
+    return(mean(abs((targets - predictions)) / targets) * 100)
+}
+
+# Compute Mean Absolute Error
+mae <- function(predictions, targets){
+  return(mean(abs((targets - predictions))))
+}
+
+# Compute Model Performance on test and train data    
+model_pref <- function(model, x_train, x_test, y_train, y_test){
+
+    # Insample Prediction
+    y_pred_train = predict(model, x_train)
+    y_observed_train = y_train
+
+    # Prediction on test data
+    y_pred_test = predict(model, x_test)
+    y_observed_test = y_test
+
+    return(
+        data.frame(
+                "Data" = c("Train", "Test"),
+                "RMSE" = c(
+                    rmse(y_pred_train, y_observed_train),
+                    rmse(y_pred_test, y_observed_test)
+                ),
+                "MAE"= c(
+                    mae(y_pred_train, y_observed_train),
+                    mae(y_pred_test, y_observed_test)
+                ),
+                "MAPE"= c(
+                    mape(y_pred_train, y_observed_train),
+                    mape(y_pred_test, y_observed_test)
+                )
+            
+        )
+   )
+}
+
+# Compute performence of Model2 (lm model)
+pref_lm_model <- model_pref(model = model2, x_train = train[,-9], x_test = test[,-9],
+           y_train = train[,9], y_test = test[,9]) 
+
+```
+
+ \
+
+```{r lm_model_evaluation, echo=F}
+knitr::kable(pref_lm_model, align = "c") %>%
+  kableExtra::kable_minimal(full_width = T, position = "center")
+```
+
+**Observations:**
+
+* RMSE, MAE, and MAPE of train and test data are not very different, indicating that the **model is not overfitting and has generalized well.**
+
+#### Applying the cross validation technique to improve the model and evaluating it using different evaluation metrics.
+  
+ \
+ 
+```{r lm_cross_validation, echo=T}
+set.seed(100)
+fitControl <- trainControl(method = "cv", number = 10)
+fit <- train(MEDV_log ~ ., 
+         data = train, 
+         method = "lm", 
+         trControl = fitControl)
+fit
+```
+
+**Observations:**
+
+- The R-squared on the cross validation is 0.760, whereas on the training dataset it was 0.776
+- And the MSE on cross validation is 0.147, whereas on the training dataset it was 0.142
+
+We may want to reiterate the model building process again with new features or better feature engineering to increase the R-squared and decrease the MSE on cross validation.
+
+#### Interpreting Regression Coefficients
+  
+ \
+ 
+With our linear regression model's adjusted R-squared value of around 0.76, we are able to capture **76% of the variation** in our data.
+
+The model indicates that the most significant predictors of the logarithm of house prices are:
+
+**NOX:**      -0.647223
+
+**CHAS:**      0.108450
+
+**RM:**         0.080453
+
+**PTRATIO:**   -0.041788
+
+**DIS:**       -0.038198
+    
+**LSTAT:**     -0.032278
+
+**CRIM:**      -0.009110
+
+**RAD:**        0.002654
+
+
+The p-values for these variables are < 0.05 in our final model, meaning they are statistically significant towards house price prediction.
+
+**It is important to note here that the predicted values are log (MEDV) and therefore coefficients have to be converted accordingly by taking their exponent to understand their influence on price.**
+
+* The house price decreases with an increase in NOX (nitric oxide concentration). **1 unit increase in the NOX leads to a decrease of** exp(0.647223) ~ **1.91 times the price** of the house when everything else is constant. This is fairly easy to understand as more polluted areas are not desirable to live in and hence cost less.
+
+* The house price increases with an increase in CHAS (Charles River variable). **1 unit increase in CHAS leads to an increase of** exp(0.108) ~ **1.11 times the price** of the house. This is understandable, as houses by the river would be more desirable due to their scenic view, and hence more expensive.
+
+* The house price increases with an increase in RM (average number of rooms per dwelling). **1 unit increase in RM leads to** exp(0.0804) ~ 1.08 times, or a **6% increase in the price of the house** when everything else is constant. Clearly, the higher the average number of rooms per dwelling, the more expensive the house.
+
+* Other variables such as CRIM (per capita crime rate by town), PTRATIO (pupil-teacher ratio by town), DIS (weighted distances to 5 Boston employment centers) and LSTAT (% Lower Status of the population) are all negatively correlated with house price, for differing reasons.
+
+* The RAD variable (index of accessibility to radial highways), with a small coefficient of 0.0026, while being statistically significant, does not appear to have much of an effect on the price of the house.
+
+### Let's now build  Non- Linear models like Decision tree and Random forest and check their performance
+
+### Building Decision Tree
+
+ \
+ 
+```{r decision_tree_model, echo=T}
+# set seed to fix number where be able to have same random set everytime
+set.seed(100)
+# split using createDataPartition function where train data has 70% of the data
+# and test data has 30% of the data
+trainIndex <- createDataPartition(df$MEDV_log, p = .7,
+                                  list = FALSE,
+                                  times = 1)
+
+
+# Create training and testing dataset
+train <- df[trainIndex,] 
+test <- df[-trainIndex,]
+
+# create the model
+model <- rpart(MEDV_log ~ ., data = train, 
+               control = rpart.control(minsplit=3 , minbucket=2,
+                                       maxdepth=30, cp = 0.001, xval=10))
+
+# print summary of the model
+# Compute performence of Model (rpart model)
+pref_decision_tree_model <- model_pref(model = model, 
+                                       x_train = train[,-13], x_test = test[,-13],
+           y_train = train$MEDV_log, y_test = test$MEDV_log) 
+```
+
+#### Checking Regression Trees model perform on the train and test dataset
+
+ \
+ 
+```{r rt_model_evaluation, echo=F}
+knitr::kable(pref_decision_tree_model, align = "c") %>%
+  kableExtra::kable_minimal(full_width = T, position = "center")
+```
+
+
+**Observations:**
+
+- **The model seem to overfit the data** by giving almost good RMSE result of the train dataset and compare with error on the test dataset.
+
+
+```{r decision_tree_plot, echo=F, fig.width=9, fig.height=9}
+rpart.plot(model, type = 3, clip.right.labs = FALSE,
+           branch = .4,
+           box.palette = "Grays")
+```
+
+
+**Observations:**
+
+- **The first split is at LSAT<=14.915%**, which signifies that areas where LSAT% or the Lower status of the population resides is <15%, then the prices of the property are high. 
+- **Other 2 important factors which decide the property rate are DIS and RM**. Houses with no. of rooms >6 are having a high price as compared to other houses, which makes senses as more number of room corresponds to the bigger house and hence large area and thus higher prices. 
+- **For the area where per capita crime rate is higher the house prices are lower**. This corresponds 2 to things, first is maybe area where low population reside a even smaller crime rate is affecting that area and making it risky to live. Second is maybe there is a populated area and crime rate is also high, but dues some other factors of the property.
+
+\newpage
+
+#### Let's plot the feature importance for each variable in the dataset and analyze the variables
+
+```{r decision_tree_feature_importance, echo=F, fig.width=6, fig.height=4}
+# Get variable.importance from the model into data frame
+vi <- data.frame(imp = model$variable.importance)
+# Transform the data frame and re-order it
+vi <- vi %>% 
+  tibble::rownames_to_column() %>% 
+  dplyr::rename("variable" = rowname) %>% 
+  dplyr::arrange(imp) %>%
+  dplyr::mutate(variable = forcats::fct_inorder(variable))
+# Plot the importance
+ggplot2::ggplot(vi) +
+  geom_col(aes(x = variable, y = imp, fill=variable),
+           show.legend = F) +
+  coord_flip() +
+  theme_bw()
+```
+
+**Observations:**
+
+- As seen from the decision tree above, **LSAT is the more important variable** which affect the price of a house, as area where high profile people are living tend to have a high price of the house. 
+- Other important features are **RM, CRIM, DIS and NOX level**. These variables collectively signifies that people can pay higher price for the areas where the crime rate is less, which are near to highways and are healthy to live.
+- Another important observation can be that, from the decision tree area with low LSAT, high RM and low PTRATIO tend to have a high price for the houses in that area, But here we can see these features are not that important in deciding the price of the house, One of the reason can be that in the decision tree these features are corresponding to the houses with high prices which signifies that these features are only contribution for the area where good profile people are living.
+
+
+### Building Random Forest 
+
+```{r random_forest_model, echo=T}
+# set seed to fix number where be able to have same random set everytime
+set.seed(100)
+# split using createDataPartition function where train data has 70% of the data
+# and test data has 30% of the data
+trainIndex <- createDataPartition(df$MEDV_log, p = .7,
+                                  list = FALSE,
+                                  times = 1)
+
+
+# Create training and testing dataset
+train <- df[trainIndex,] 
+test <- df[-trainIndex,]
+
+# create the model
+model <- randomForest::randomForest(MEDV_log ~ ., data = train, mtry=2, ntree=1000)
+
+# print summary of the model
+# Compute performence of Model (rpart model)
+pref_random_forest_model <- model_pref(model = model,
+                                       x_train = train[,-13], x_test = test[,-13],
+           y_train = train$MEDV_log, y_test = test$MEDV_log) 
+```
+
+#### Checking Regression Trees model perform on the train and test dataset
+
+ \
+ 
+```{r rf_model_evaluation, echo=F}
+knitr::kable(pref_random_forest_model, align = "c") %>%
+  kableExtra::kable_minimal(full_width = T, position = "center")
+```
+
+
+**Observations:**
+
+- **RMSE, MAE and MAPE for the random forest are very small and are close for both train and test dataset.** Hence model is performing very good and giving generalized results. 
+
+#### Let's plot the feature importance for each variable in the dataset and analyze the variables
+
+```{r random_forest_feature_importance, echo=F, fig.width=6, fig.height=4}
+# Get variable.importance from the model into data frame
+vi <- data.frame(imp = model$importance[,1])
+# Transform the data frame and re-order it
+vi <- vi %>% 
+  tibble::rownames_to_column() %>% 
+  dplyr::rename("variable" = rowname) %>% 
+  dplyr::arrange(imp) %>%
+  dplyr::mutate(variable = forcats::fct_inorder(variable))
+# Plot the importance
+ggplot2::ggplot(vi) +
+  geom_col(aes(x = variable, y = imp, fill=variable),
+           show.legend = F) +
+  coord_flip() +
+  theme_bw()
+```
+
+**Observations:**
+
+- The feature importance for decision Tree and Random forest both are approximately same.
+
+\newpage
+
+## Models Performance Comparison
+
+```{r models_performance_comparison, echo=F}
+print("Linear Regression")
+pref_lm_model
+print("Decision tree")
+pref_decision_tree_model
+print("Random Forest")
+pref_random_forest_model  
+```
+
+
+**Observations:**
+
+- All the 3 models are performing good and have low RMSE, MAE and MAPE. 
+- **Decision tree is overfitting a bit as it is giving around 100% results on the train dataset**, which Linear Regression and Random Forest are not over fitting. 
+- **Random forest is giving the best result of all the 3 models.** 
+
+
+## Conclusion
+
+- Our final **Random forest has a Mean Absolute Percentage Error (MAPE) of ~4%** on the test data, which means that **we are able to predict within ~4% of the price value on average**. This is a good model and we can use this model in production. 
+- We can maybe use Linear regression to get statistical insights about the model and maybe use Random forest in production. 
+
+* **Percentage lower-status population has a negative correlation with house price and have the highest importance in deciding the price for the house**, because the definition of the term includes people without or with partial high-school education and male workers classified as laborers; a population segment that is likely to live in less well-off, inexpensive areas due to their lower incomes. Hences houses in such areas would be cheaper to buy as well.
+
+* **Crime rate is negatively correlated with house price and is also an important feature in predicting the house prices**, as neighborhoods and areas with a higher crime rate would clearly be more undesirable and cheaper to buy a house in. 
+
+* **The NOX level are highly negatively correlated with the house prices** and is one on the important feature in predicting house prices.This is fairly easy to understand as more polluted areas are not desirable to live in and hence cost less.
+
+* **The pupil-to-teacher ratio is negatively correlated with house price and Decision tree suggested that the lower  pupil-to-teacher ratio have higher house prices.**, presumably because students, looking for affordable housing due to their general lack of income and having to pay tuition fees, may be concentrated in less expensive areas. Teachers on the other hand, are paid well and may live in more well-to-do neighborhoods.
+
+* **Distance to employment centers also has a negative correlation with house price**, probably because like many developed cities in the world, Boston has been built from the center radially outwards. The employment centers, being close to the center of the city like many of the oldest and most important of the city's buildings, are areas of prime real estate due to the convenience of being so close, whereas suburban areas further way from the town center that are recently developed, may be less expensive to buy houses. 
+
+* Note that I didn't apply tuning techniques in the Random Forest section, I will show that in the coding file :)
+
